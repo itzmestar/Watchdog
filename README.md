@@ -13,7 +13,7 @@ python: 3.5.2 & 3.8
 
 - restart monitored applications and restart them if they exit 
 
-## installation
+## setup
 
 sudo apt install python3-pip
 
@@ -33,7 +33,20 @@ Virtual environment
 ```
 $ sudo apt-get install python3-venv
 $ python3 -m venv pyenv35
+$ source pyenv35/bin/activate
+$ pip install psutil
 ```
 ## Configuration
 
 ## Usage
+```
+$ df -k /
+Filesystem     1K-blocks    Used Available Use% Mounted on
+/dev/sda1       50758760 1545196  49197180   4% /
+
+psutil.disk_usage('/')
+sdiskusage(total=51976970240, used=1582280704, free=50377912320, percent=3.0)
+total = 50758760
+used = 1545196
+free=49197180
+```

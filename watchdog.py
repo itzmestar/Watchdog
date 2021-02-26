@@ -1,23 +1,78 @@
 #!/usr/bin/python3
+import glob
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import queue
 import os
+from subprocess import Popen
+import argparse
+import psutil
+import configparser
+from time import sleep
 
-# Version Info #
-__version__ = "v0.0.1"
-
+# ---------- Version Info ----------#
+__version__ = "v0.0.2"
 
 LOG = None
+CONFIG = None
+
+
+def check_file(file, on_exit=False):
+    """
+    Check if a file exists or not.
+    :param file: file with path
+    :param on_exit: if True and file doesn't exist then exit the program. Else just warn.
+    """
+    if not os.path.isfile(file):
+        if on_exit:
+            LOG.error("{} isn't a file. Exiting.".format(file))
+            delete_pidfile()
+            exit(1)
+        LOG.warning("{} isn't a file.".format(file))
+        return False
+    return True
+
+
+def load_config(config_file):
+    global CONFIG
+    CONFIG = configparser.RawConfigParser()
+
+    # check config file
+    check_file(config_file, on_exit=True)
+
+    CONFIG.optionxform = lambda option: option
+    CONFIG.read(config_file)
+
+
+def ensure_uniqness(pid_file=".watchdog.pid"):
+    """
+    Ensure only 1 instance of script run at a time
+    """
+    pid = str(os.getpid())
+    if os.path.exists(pid_file):
+        print("{} already exists, exiting".format(pid_file))
+        exit(0)
+    with open(pid_file, 'w') as f:
+        f.write(pid)
+
+
+def delete_pidfile(pid_file=".watchdog.pid"):
+    """
+    Delete pid file if exists
+    :param pid_file: filename with path
+    :return:
+    """
+    if os.path.exists(pid_file):
+        os.unlink(pid_file)
 
 
 class Logger:
     logger = logging.getLogger(__name__)
 
-    def __init__(self, level='INFO', logfile_backup=5):
-        #logger = logging.getLogger(__name__)
+    def __init__(self, level='INFO', console=True, logfile_backup=5):
         self.listener = None
         self.logfile_backup = logfile_backup
+        self.console_logging = console
         if level == 'DEBUG':
             self.level = logging.DEBUG
         elif level == 'WARN':
@@ -47,17 +102,18 @@ class Logger:
         log_formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(funcName)s : %(message)s')
         logging_file = os.path.join(
             os.getcwd(),
-            os.path.splitext(os.path.basename(__file__))[0]+'.log'
+            os.path.splitext(os.path.basename(__file__))[0] + '.log'
         )
         Logger.logger.setLevel(self.level)
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(log_formatter)
         console_handler.setLevel(self.level)
-        Logger.logger.addHandler(console_handler)
+        if self.console_logging:
+            Logger.logger.addHandler(console_handler)
 
         file_handler = TimedRotatingFileHandler(logging_file, when='h', interval=1,
-                                                        backupCount=self.logfile_backup)
+                                                backupCount=self.logfile_backup)
         file_handler.setFormatter(log_formatter)
         file_handler.setLevel(self.level)
 
@@ -71,25 +127,132 @@ class Logger:
         return Logger.logger
 
 
+LOG = logging.getLogger(__name__)
+
+
 class Watchdog:
     """
     Watchdog class
     """
-    pass
+
+    def __init__(self):
+        LOG.info("Initializing Watchdog...")
+        self.monitored_processes = dict()
+        self.monitored_process_cmd = ['python /home/ubuntu/Watchdog/test/while.py',
+                                      'python /home/ubuntu/Watchdog/test/img_compare.py']  # <- fetch from config file
+
+    @staticmethod
+    def get_process_list(startswith='python'):
+        # {p.pid: p.info for p in psutil.process_iter(['name', 'username'])}
+        '''
+        for process in psutil.process_iter(['pid', 'name', 'username', 'cmdline']):
+            if process.info.get('name').startswith('python'):
+                print(process.info)
+        '''
+        filtered_processes = {p.pid: p for p in psutil.process_iter(['name', 'username', 'cmdline', 'create_time'])
+                              if p.info.get('name').startswith(startswith)}
+        return filtered_processes
+
+    def update_process_dict(self):
+        LOG.info("Started")
+        # load_config()
+        current_filtered_processes = self.get_process_list()
+        self.monitored_processes = dict()
+        for process in current_filtered_processes.values():
+            cmdline = process.info.get('cmdline').join()
+            if cmdline in self.monitored_process_cmd:
+                self.monitored_processes[cmdline] = process
+                self.monitored_process_cmd.remove(cmdline)
+
+            if len(self.monitored_process_cmd) == 0:
+                return
+        # commands for which no process exists
+        for cmdline in self.monitored_process_cmd:
+            self.monitored_processes[cmdline] = None
+
+    @staticmethod
+    def start_process(start_cmd):
+        """
+        Starts a process
+        :param start_cmd: string or list
+        :return: pid or None
+        """
+        LOG.info("Started for {}".format(start_cmd))
+        if isinstance(start_cmd, str):
+            start_cmd = start_cmd.strip().split()
+        elif isinstance(start_cmd, list):
+            return None
+        try:
+            # pid = Popen(["python", "/home/ubuntu/Watchdog/test/while.py"]).pid
+            pid = Popen(start_cmd).pid
+            LOG.debug("Process started successfully, pid: {}".format(pid))
+        except Exception as e:
+            LOG.exception(e)
+            return None
+        return pid
+
+    def get_disk_usage(self, path):
+        """
+        Get disk used percentage of partition
+        :param path: path
+        :return: disk usage %
+        """
+        try:
+            u = psutil.disk_usage(path)
+            # available_per = Avail*100 / total
+            free_percent = (u.free * 100) / u.free
+            return 100 - free_percent
+        except Exception as e:
+            LOG.exception(e)
+            return 0.0
+
+    def free_space(self, path):
+        """
+        Delete oldest file in given path to free space
+        :param path: path
+        :return:
+        """
+        glob.glob('D:\\py_game\\upwork\\Watchdog\\' + '**\\', recursive=True)
+
+    def watch_process(self, interval=1):
+        LOG.info("Started")
+        for cmd, process in self.monitored_processes.values():
+            # if process exists & running fine -> do nothing
+            if process and process.is_running():
+                continue
+            # else: create a new process
+            pid = self.start_process(cmd)
+
+            if pid:
+                # update process dict
+                self.update_process_dict()
+
+            # sleep
+            sleep(interval)
 
 
-def main():
+def main(args):
     global LOG
-    log = Logger()
+    load_config(args.ini)
+    log = Logger(level=CONFIG)
     LOG = Logger.get_logger()
-    LOG.info(f"Running Version: {__version__}")
+    LOG.info(f"============= Running Version {__version__} =============")
 
-
-    LOG.info(f"Finished Version: {__version__}")
+    LOG.info(f"============= Finished Version {__version__} =============")
     log.stop()
 
 
 if __name__ == '__main__':
-    main()
+    """
+        Execution starts here.
+    """
 
-
+    parser = argparse.ArgumentParser(description='Watchdog Script')
+    parser.add_argument('-i', '--ini', help='config filename', type=str, required=False, default='watchdog.ini')
+    args = parser.parse_args()
+    ensure_uniqness()
+    try:
+        main(args)
+    except Exception as e:
+        print(e)
+    delete_pidfile()
