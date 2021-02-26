@@ -161,7 +161,7 @@ class Watchdog:
         LOG.debug(pformat(current_filtered_processes))
         self.monitored_processes = dict()
         for process in current_filtered_processes.values():
-            cmdline = process.info.get('cmdline').join()
+            cmdline = ' '.join(process.info.get('cmdline'))
             LOG.debug(cmdline)
             if cmdline in self.monitored_process_cmd:
                 self.monitored_processes[cmdline] = process
