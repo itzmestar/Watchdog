@@ -9,7 +9,7 @@ import argparse
 import psutil
 import configparser
 from time import sleep
-
+from pprint import pformat
 # ---------- Version Info ----------#
 __version__ = "v0.0.2"
 
@@ -140,6 +140,7 @@ class Watchdog:
         self.monitored_processes = dict()
         self.monitored_process_cmd = ['python /home/ubuntu/Watchdog/test/while.py',
                                       'python /home/ubuntu/Watchdog/test/img_compare.py']  # <- fetch from config file
+        self.update_process_dict()
 
     @staticmethod
     def get_process_list(startswith='python'):
@@ -157,9 +158,11 @@ class Watchdog:
         LOG.info("Started")
         # load_config()
         current_filtered_processes = self.get_process_list()
+        LOG.debug(pformat(current_filtered_processes))
         self.monitored_processes = dict()
         for process in current_filtered_processes.values():
             cmdline = process.info.get('cmdline').join()
+            LOG.debug(cmdline)
             if cmdline in self.monitored_process_cmd:
                 self.monitored_processes[cmdline] = process
                 self.monitored_process_cmd.remove(cmdline)
@@ -216,16 +219,18 @@ class Watchdog:
 
     def watch_process(self, interval=1):
         LOG.info("Started")
-        for cmd, process in self.monitored_processes.values():
-            # if process exists & running fine -> do nothing
-            if process and process.is_running():
-                continue
-            # else: create a new process
-            pid = self.start_process(cmd)
+        while True:
+            for cmd, process in self.monitored_processes.values():
+                # if process exists & running fine -> do nothing
+                if process and process.is_running():
+                    LOG.debug("Process {} is running.".format(cmd))
+                    continue
+                # else: create a new process
+                pid = self.start_process(cmd)
 
-            if pid:
-                # update process dict
-                self.update_process_dict()
+                if pid:
+                    # update process dict
+                    self.update_process_dict()
 
             # sleep
             sleep(interval)
@@ -236,9 +241,10 @@ def main(args):
     load_config(args.ini)
     log = Logger(level=CONFIG)
     LOG = Logger.get_logger()
-    LOG.info(f"============= Running Version {__version__} =============")
-
-    LOG.info(f"============= Finished Version {__version__} =============")
+    LOG.info("============= Running Version {} =============".format(__version__))
+    w = Watchdog()
+    w.watch_process()
+    LOG.info("============= Finished Version {} =============".format(__version__))
     log.stop()
 
 
