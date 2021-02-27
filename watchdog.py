@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import glob
 import logging
+import signal
+import sys
 from logging.handlers import TimedRotatingFileHandler
 import queue
 import os
@@ -44,7 +46,7 @@ def load_config(config_file):
     CONFIG.read(config_file)
 
 
-def ensure_uniqness(pid_file=".watchdog.pid"):
+def ensure_uniqness(pid_file="./.watchdog.pid"):
     """
     Ensure only 1 instance of script run at a time
     """
@@ -56,7 +58,7 @@ def ensure_uniqness(pid_file=".watchdog.pid"):
         f.write(pid)
 
 
-def delete_pidfile(pid_file=".watchdog.pid"):
+def delete_pidfile(pid_file="./.watchdog.pid"):
     """
     Delete pid file if exists
     :param pid_file: filename with path
@@ -64,6 +66,14 @@ def delete_pidfile(pid_file=".watchdog.pid"):
     """
     if os.path.exists(pid_file):
         os.unlink(pid_file)
+
+
+def terminate_process(signalNumber, frame):
+    LOG.warning('(SIGTERM) terminating the process')
+    #log_stop()
+    delete_pidfile()
+    logging.shutdown()
+    sys.exit()
 
 
 class Logger:
@@ -87,16 +97,17 @@ class Logger:
         self.configuration()
         self.start()
 
+    def terminate_process(self):
+        pass
+
     def start(self):
         if self.listener:
             self.listener.start()
 
     def stop(self):
-        for h in Logger.logger.handlers:
-            h.flush()
         if self.listener:
             self.listener.stop()
-        logging.shutdown()
+        logging.shutdown(handlerList=Logger.logger.handlers)
 
     def configuration(self):
         log_formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(funcName)s : %(message)s')
@@ -127,7 +138,7 @@ class Logger:
         return Logger.logger
 
 
-LOG = logging.getLogger(__name__)
+#LOG = logging.getLogger(__name__)
 
 
 class Watchdog:
@@ -141,9 +152,10 @@ class Watchdog:
         self.monitored_process_cmd = ['python /home/ubuntu/Watchdog/test/while.py',
                                       'python /home/ubuntu/Watchdog/test/img_compare.py']  # <- fetch from config file
         self.update_process_dict()
+        self.started_processes = list()
 
     @staticmethod
-    def get_process_list(startswith='python'):
+    def get_process_dict(startswith='python'):
         # {p.pid: p.info for p in psutil.process_iter(['name', 'username'])}
         '''
         for process in psutil.process_iter(['pid', 'name', 'username', 'cmdline']):
@@ -157,9 +169,10 @@ class Watchdog:
     def update_process_dict(self):
         LOG.info("Started")
         # load_config()
-        current_filtered_processes = self.get_process_list()
+        current_filtered_processes = self.get_process_dict()
         LOG.debug(pformat(current_filtered_processes))
         self.monitored_processes = dict()
+
         for process in current_filtered_processes.values():
             cmdline = ' '.join(process.info.get('cmdline'))
             LOG.debug(cmdline)
@@ -169,12 +182,13 @@ class Watchdog:
 
             if len(self.monitored_process_cmd) == 0:
                 return
+        LOG.debug(self.monitored_process_cmd)
         # commands for which no process exists
         for cmdline in self.monitored_process_cmd:
             self.monitored_processes[cmdline] = None
+        LOG.debug(pformat(self.monitored_processes))
 
-    @staticmethod
-    def start_process(start_cmd):
+    def start_process(self, start_cmd):
         """
         Starts a process
         :param start_cmd: string or list
@@ -187,12 +201,13 @@ class Watchdog:
             return None
         try:
             # pid = Popen(["python", "/home/ubuntu/Watchdog/test/while.py"]).pid
-            pid = Popen(start_cmd).pid
-            LOG.debug("Process started successfully, pid: {}".format(pid))
+            process = Popen(start_cmd)
+            self.started_processes.append(process)
+            LOG.debug("Process started successfully, pid: {}".format(process.pid))
         except Exception as e:
             LOG.exception(e)
             return None
-        return pid
+        return process.pid
 
     def get_disk_usage(self, path):
         """
@@ -219,8 +234,14 @@ class Watchdog:
 
     def watch_process(self, interval=1):
         LOG.info("Started")
+        LOG.debug(self.monitored_processes)
         while True:
-            for cmd, process in self.monitored_processes.values():
+            for process in self.started_processes:
+                if process.poll():
+                    self.started_processes.remove(process)
+
+            LOG.debug(self.monitored_processes.values())
+            for cmd, process in self.monitored_processes.items():
                 # if process exists & running fine -> do nothing
                 if process and process.is_running():
                     LOG.debug("Process {} is running.".format(cmd))
@@ -238,8 +259,8 @@ class Watchdog:
 
 def main(args):
     global LOG
-    load_config(args.ini)
-    log = Logger(level=CONFIG)
+    #load_config(args.ini)
+    log = Logger(level='DEBUG')
     LOG = Logger.get_logger()
     LOG.info("============= Running Version {} =============".format(__version__))
     w = Watchdog()
@@ -257,6 +278,8 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--ini', help='config filename', type=str, required=False, default='watchdog.ini')
     args = parser.parse_args()
     ensure_uniqness()
+    signal.signal(signal.SIGTERM, terminate_process)
+    signal.signal(signal.SIGINT, terminate_process)
     try:
         main(args)
     except Exception as e:
