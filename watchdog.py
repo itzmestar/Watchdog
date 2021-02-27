@@ -146,13 +146,14 @@ class Watchdog:
     Watchdog class
     """
 
-    def __init__(self):
+    def __init__(self, config_file):
         LOG.info("Initializing Watchdog...")
+        self.config_file = config_file
         self.monitored_processes = dict()
-        self.monitored_process_cmd = ['python /home/ubuntu/Watchdog/test/while.py',
-                                      'python /home/ubuntu/Watchdog/test/img_compare.py']  # <- fetch from config file
-        self.update_process_dict()
+        self.monitored_process_cmd = None
         self.started_processes = list()
+        self.watch_interval = 1
+        self.update_process_dict()
 
     @staticmethod
     def get_process_dict(startswith='python'):
@@ -166,9 +167,17 @@ class Watchdog:
                               if p.info.get('name').startswith(startswith)}
         return filtered_processes
 
+    def read_from_config(self):
+        #load_config(self.config_file)
+        CONFIG.read(self.config_file)
+        self.watch_interval = CONFIG.getfloat('Watchdog', 'interval', fallback=1)
+        self.monitored_process_cmd = [' '.join(x.strip().split()) for x in
+                                      CONFIG.get('Watchdog', 'programs', fallback=[]).split(',')]
+
     def update_process_dict(self):
         LOG.info("Started")
-        # load_config()
+        self.read_from_config()
+
         current_filtered_processes = self.get_process_dict()
         LOG.debug(pformat(current_filtered_processes))
         self.monitored_processes = dict()
@@ -232,7 +241,7 @@ class Watchdog:
         """
         glob.glob('D:\\py_game\\upwork\\Watchdog\\' + '**\\', recursive=True)
 
-    def watch_process(self, interval=1):
+    def watch_process(self):
         LOG.info("Started")
         LOG.debug(self.monitored_processes)
         while True:
@@ -249,21 +258,24 @@ class Watchdog:
                 # else: create a new process
                 pid = self.start_process(cmd)
 
-                if pid:
-                    # update process dict
-                    self.update_process_dict()
+                if pid: pass
+            # update process dict
+            self.update_process_dict()
 
             # sleep
-            sleep(interval)
+            sleep(self.watch_interval)
 
 
 def main(args):
     global LOG
-    #load_config(args.ini)
-    log = Logger(level='DEBUG')
+    load_config(args.ini)
+    log = Logger(level=CONFIG.get('Logging', 'level', fallback='INFO'),
+                 console=CONFIG.getboolean('Logging', 'console_log', fallback=False),
+                 logfile_backup=CONFIG.getint('Logging', 'backup', fallback=5)
+                 )
     LOG = Logger.get_logger()
     LOG.info("============= Running Version {} =============".format(__version__))
-    w = Watchdog()
+    w = Watchdog(args.ini)
     w.watch_process()
     LOG.info("============= Finished Version {} =============".format(__version__))
     log.stop()
