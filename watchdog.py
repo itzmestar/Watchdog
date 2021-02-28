@@ -13,7 +13,7 @@ import configparser
 from time import sleep
 from pprint import pformat
 # ---------- Version Info ----------#
-__version__ = "v0.0.2"
+__version__ = "v0.0.3"
 
 LOG = None
 CONFIG = None
@@ -70,7 +70,6 @@ def delete_pidfile(pid_file="./.watchdog.pid"):
 
 def terminate_process(signalNumber, frame):
     LOG.warning('(SIGTERM) terminating the process')
-    #log_stop()
     delete_pidfile()
     logging.shutdown()
     sys.exit()
@@ -157,12 +156,6 @@ class Watchdog:
 
     @staticmethod
     def get_process_dict(startswith='python'):
-        # {p.pid: p.info for p in psutil.process_iter(['name', 'username'])}
-        '''
-        for process in psutil.process_iter(['pid', 'name', 'username', 'cmdline']):
-            if process.info.get('name').startswith('python'):
-                print(process.info)
-        '''
         filtered_processes = {p.pid: p for p in psutil.process_iter(['name', 'username', 'cmdline', 'create_time'])
                               if p.info.get('name').startswith(startswith)}
         return filtered_processes
