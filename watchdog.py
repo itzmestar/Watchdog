@@ -247,7 +247,7 @@ class Watchdog:
             for cmd, process in self.monitored_processes.items():
                 # if process exists & running fine -> do nothing
                 if process and process.is_running():
-                    LOG.debug("Process {} is running.".format(cmd))
+                    LOG.info("Process {} is running.".format(cmd))
                     continue
                 # else: create a new process
                 pid = self.start_process(cmd)
