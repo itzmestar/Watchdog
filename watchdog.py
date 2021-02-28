@@ -12,6 +12,7 @@ import psutil
 import configparser
 from time import sleep
 from pprint import pformat
+
 # ---------- Version Info ----------#
 __version__ = "v0.0.3"
 
@@ -137,7 +138,7 @@ class Logger:
         return Logger.logger
 
 
-#LOG = logging.getLogger(__name__)
+# LOG = logging.getLogger(__name__)
 
 
 class Watchdog:
@@ -151,7 +152,11 @@ class Watchdog:
         self.monitored_processes = dict()
         self.monitored_process_cmd = None
         self.started_processes = list()
-        self.watch_interval = 1
+        self.watchdog_interval = 1
+        self.disk_interval = 60
+        self.monitored_partitions = list()
+        self.usage_threshold = 90
+        self.delete_file_paths = list()
         self.update_process_dict()
 
     @staticmethod
@@ -160,16 +165,16 @@ class Watchdog:
                               if p.info.get('name').startswith(startswith)}
         return filtered_processes
 
-    def read_from_config(self):
-        LOG.info("Reading any configuration changes...")
+    def read_watchdog_config(self):
+        LOG.info("Reading any watchdog configuration changes...")
         CONFIG.read(self.config_file)
-        self.watch_interval = CONFIG.getfloat('Watchdog', 'interval', fallback=1)
+        self.watchdog_interval = CONFIG.getfloat('Watchdog', 'interval', fallback=1)
         self.monitored_process_cmd = [' '.join(x.strip().split()) for x in
                                       CONFIG.get('Watchdog', 'programs', fallback=[]).split(',')]
 
     def update_process_dict(self):
         LOG.info("Started")
-        self.read_from_config()
+        self.read_watchdog_config()
 
         current_filtered_processes = self.get_process_dict()
         LOG.debug(pformat(current_filtered_processes))
@@ -212,7 +217,32 @@ class Watchdog:
             return None
         return process.pid
 
-    def get_disk_usage(self, path):
+    def watch_process(self):
+        LOG.debug("Started")
+        # LOG.debug(self.monitored_processes)
+        while True:
+            for process in self.started_processes:
+                if process.poll():
+                    self.started_processes.remove(process)
+
+            # LOG.debug(self.monitored_processes.values())
+            for cmd, process in self.monitored_processes.items():
+                # if process exists & running fine -> do nothing
+                if process and process.is_running():
+                    LOG.info("Process {} is running.".format(cmd))
+                    continue
+                # else: create a new process
+                pid = self.start_process(cmd)
+
+                if pid: pass
+            # update process dict
+            self.update_process_dict()
+
+            # sleep
+            sleep(self.watchdog_interval)
+
+    @staticmethod
+    def get_disk_usage(path):
         """
         Get disk used percentage of partition
         :param path: path
@@ -227,40 +257,71 @@ class Watchdog:
             LOG.exception(e)
             return 0.0
 
-    def free_space(self, path):
+    def get_all_files(self):
+        """
+        Get the list of all files sorted by modification time
+        :param paths: list of path
+        :return: list of files
+        """
+        LOG.debug("Started")
+
+        files = list()
+        for path in self.delete_file_paths:
+            files += glob.glob(path + '/**/*', recursive=True)
+
+        # filter out directories
+        files = [x for x in files if os.path.isfile(x)]
+
+        # sort files based on modify time
+        files.sort(key=os.path.getmtime)
+
+        return files
+
+    def free_space(self, partition):
         """
         Delete oldest file in given path to free space
-        :param path: path
+        :param partition:
         :return:
         """
-        glob.glob('D:\\py_game\\upwork\\Watchdog\\' + '**\\', recursive=True)
+        files = self.get_all_files()
+        if len(files) == 0:
+            LOG.warning("No files in delete list. Can't delete any file.")
+            return
+        for file in files:
+            try:
+                os.unlink(file)
+                LOG.info("Deleted file {}".format(file))
+            except Exception as e:
+                LOG.exception(e)
+            usage = self.get_disk_usage(path=partition)
+            if usage < self.usage_threshold:
+                LOG.info("Disk usage for {} is {} < threshold {}.".format(partition, usage, self.usage_threshold))
+                return
 
-    def watch_process(self):
-        LOG.info("Started")
-        # LOG.debug(self.monitored_processes)
-        while True:
-            for process in self.started_processes:
-                if process.poll():
-                    self.started_processes.remove(process)
-
-            #LOG.debug(self.monitored_processes.values())
-            for cmd, process in self.monitored_processes.items():
-                # if process exists & running fine -> do nothing
-                if process and process.is_running():
-                    LOG.info("Process {} is running.".format(cmd))
-                    continue
-                # else: create a new process
-                pid = self.start_process(cmd)
-
-                if pid: pass
-            # update process dict
-            self.update_process_dict()
-
-            # sleep
-            sleep(self.watch_interval)
+    def read_disk_config(self):
+        LOG.debug("Reading any disk configuration changes...")
+        # CONFIG.read(self.config_file)
+        self.disk_interval = CONFIG.getfloat('Disk', 'interval', fallback=60)
+        self.monitored_partitions = [' '.join(x.strip().split()) for x in
+                                     CONFIG.get('Disk', 'partitions', fallback=[]).split(',')]
+        self.usage_threshold = CONFIG.getfloat('Disk', 'usage_threshold', fallback=90)
+        self.delete_file_paths = [' '.join(x.strip().split()) for x in
+                                  CONFIG.get('Disk', 'delete_file_paths', fallback=[]).split(',')]
 
     def watch_disk_usage(self):
-        LOG.info("Started")
+        LOG.debug("Started")
+        while True:
+            # Read all configurations
+            self.read_disk_config()
+            # monitor all partitions
+            for partition in self.monitored_partitions:
+                # get disk usage for partition
+                usage = self.get_disk_usage(path=partition)
+                if usage < self.usage_threshold:
+                    continue
+                LOG.warning("Disk usage for {} is {} >= threshold {}.".format(partition, usage, self.usage_threshold))
+                self.free_space(partition)
+            sleep(self.disk_interval)
 
 
 def main(args):
