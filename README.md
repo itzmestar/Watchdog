@@ -14,22 +14,10 @@ python: 3.5.2 & 3.8
 - restart monitored applications and restart them if they exit 
 
 ## setup
-
+```
 sudo apt install python3-pip
-
-### python 3.8 installation:
 ```
-$ sudo add-apt-repository ppa:deadsnakes/ppa
-
-$ sudo apt update
-
-$ sudo apt install python3.8
-
-$ python3.8 --version
-Python 3.8.8
-
-```
-Virtual environment
+Virtual environment setup
 ```
 $ sudo apt-get install python3-venv
 $ python3 -m venv pyenv35
@@ -38,6 +26,10 @@ $ pip install psutil
 ```
 ## Configuration
 
+### cronjob setup
+```
+* * * * * PATH=$PATH:/home/ubuntu/pyenv35/bin/ && cd /home/ubuntu/Watchdog && python watchdog.py > cron.out  2>&1
+```
 ## Usage
 ```
 $ df -k /

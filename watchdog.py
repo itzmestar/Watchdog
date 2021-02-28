@@ -69,7 +69,7 @@ def delete_pidfile(pid_file="./.watchdog.pid"):
 
 
 def terminate_process(signalNumber, frame):
-    LOG.warning('(SIGTERM) terminating the process')
+    LOG.warning('({}) terminating the process'.format(signalNumber))
     delete_pidfile()
     logging.shutdown()
     sys.exit()
@@ -122,7 +122,7 @@ class Logger:
         if self.console_logging:
             Logger.logger.addHandler(console_handler)
 
-        file_handler = TimedRotatingFileHandler(logging_file, when='h', interval=1,
+        file_handler = TimedRotatingFileHandler(logging_file, when='d', interval=1,
                                                 backupCount=self.logfile_backup)
         file_handler.setFormatter(log_formatter)
         file_handler.setLevel(self.level)
@@ -161,7 +161,7 @@ class Watchdog:
         return filtered_processes
 
     def read_from_config(self):
-        #load_config(self.config_file)
+        LOG.info("Reading any configuration changes...")
         CONFIG.read(self.config_file)
         self.watch_interval = CONFIG.getfloat('Watchdog', 'interval', fallback=1)
         self.monitored_process_cmd = [' '.join(x.strip().split()) for x in
@@ -207,6 +207,7 @@ class Watchdog:
             self.started_processes.append(process)
             LOG.debug("Process started successfully, pid: {}".format(process.pid))
         except Exception as e:
+            LOG.error("Process failed to start, cmd: {}".format(start_cmd))
             LOG.exception(e)
             return None
         return process.pid
@@ -236,13 +237,13 @@ class Watchdog:
 
     def watch_process(self):
         LOG.info("Started")
-        LOG.debug(self.monitored_processes)
+        # LOG.debug(self.monitored_processes)
         while True:
             for process in self.started_processes:
                 if process.poll():
                     self.started_processes.remove(process)
 
-            LOG.debug(self.monitored_processes.values())
+            #LOG.debug(self.monitored_processes.values())
             for cmd, process in self.monitored_processes.items():
                 # if process exists & running fine -> do nothing
                 if process and process.is_running():
@@ -257,6 +258,9 @@ class Watchdog:
 
             # sleep
             sleep(self.watch_interval)
+
+    def watch_disk_usage(self):
+        LOG.info("Started")
 
 
 def main(args):
