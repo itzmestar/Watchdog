@@ -12,9 +12,9 @@ import psutil
 import configparser
 from time import sleep
 from pprint import pformat
-
+import concurrent.futures
 # ---------- Version Info ----------#
-__version__ = "v0.0.4"
+__version__ = "v0.0.5"
 
 LOG = None
 CONFIG = None
@@ -325,6 +325,14 @@ class Watchdog:
                 self.free_space(partition)
             sleep(self.disk_interval)
 
+    def workflow(self):
+        result_list = list()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            result = executor.submit(self.watch_process)
+            result_list.append(result)
+            result = executor.submit(self.watch_disk_usage)
+            result_list.append(result)
+
 
 def main(args):
     global LOG
@@ -336,7 +344,7 @@ def main(args):
     LOG = Logger.get_logger()
     LOG.info("============= Running Version {} =============".format(__version__))
     w = Watchdog(args.ini)
-    w.watch_disk_usage()
+    w.workflow()
     LOG.info("============= Finished Version {} =============".format(__version__))
     log.stop()
 
