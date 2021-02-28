@@ -14,7 +14,7 @@ from time import sleep
 from pprint import pformat
 
 # ---------- Version Info ----------#
-__version__ = "v0.0.3"
+__version__ = "v0.0.4"
 
 LOG = None
 CONFIG = None
@@ -157,7 +157,7 @@ class Watchdog:
         self.monitored_partitions = list()
         self.usage_threshold = 90
         self.delete_file_paths = list()
-        self.update_process_dict()
+
 
     @staticmethod
     def get_process_dict(startswith='python'):
@@ -219,6 +219,7 @@ class Watchdog:
 
     def watch_process(self):
         LOG.debug("Started")
+        self.update_process_dict()
         # LOG.debug(self.monitored_processes)
         while True:
             for process in self.started_processes:
@@ -251,8 +252,8 @@ class Watchdog:
         try:
             u = psutil.disk_usage(path)
             # available_per = Avail*100 / total
-            free_percent = (u.free * 100) / u.free
-            return 100 - free_percent
+            free_percent = (u.free / u.total) * 100.0
+            return 100.0 - free_percent
         except Exception as e:
             LOG.exception(e)
             return 0.0
@@ -300,7 +301,7 @@ class Watchdog:
 
     def read_disk_config(self):
         LOG.debug("Reading any disk configuration changes...")
-        # CONFIG.read(self.config_file)
+        CONFIG.read(self.config_file)
         self.disk_interval = CONFIG.getfloat('Disk', 'interval', fallback=60)
         self.monitored_partitions = [' '.join(x.strip().split()) for x in
                                      CONFIG.get('Disk', 'partitions', fallback=[]).split(',')]
@@ -318,6 +319,7 @@ class Watchdog:
                 # get disk usage for partition
                 usage = self.get_disk_usage(path=partition)
                 if usage < self.usage_threshold:
+                    LOG.debug("Disk usage for {} is {} < threshold {}.".format(partition, usage, self.usage_threshold))
                     continue
                 LOG.warning("Disk usage for {} is {} >= threshold {}.".format(partition, usage, self.usage_threshold))
                 self.free_space(partition)
@@ -334,7 +336,7 @@ def main(args):
     LOG = Logger.get_logger()
     LOG.info("============= Running Version {} =============".format(__version__))
     w = Watchdog(args.ini)
-    w.watch_process()
+    w.watch_disk_usage()
     LOG.info("============= Finished Version {} =============".format(__version__))
     log.stop()
 
