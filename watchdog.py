@@ -14,7 +14,7 @@ from time import sleep
 from pprint import pformat
 import concurrent.futures
 # ---------- Version Info ----------#
-__version__ = "v0.0.5"
+__version__ = "v1.0.0"
 
 LOG = None
 CONFIG = None
