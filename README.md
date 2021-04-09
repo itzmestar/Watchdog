@@ -30,15 +30,3 @@ $ pip install psutil
 ```
 * * * * * PATH=$PATH:/home/ubuntu/pyenv35/bin/ && cd /home/ubuntu/Watchdog && python watchdog.py > cron.out  2>&1
 ```
-## Usage
-```
-$ df -k /
-Filesystem     1K-blocks    Used Available Use% Mounted on
-/dev/sda1       50758760 1545196  49197180   4% /
-
-psutil.disk_usage('/')
-sdiskusage(total=51976970240, used=1582280704, free=50377912320, percent=3.0)
-total = 50758760
-used = 1545196
-free=49197180
-```
